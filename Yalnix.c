@@ -22,7 +22,7 @@ void TrapMemory(ExceptionInfo *info);
 void TrapMath(ExceptionInfo *info);
 void TrapTTYReceive(ExceptionInfo *info);
 void TrapTTYTransmit(ExceptionInfo *info);
-
+ 
 #define REGION_0 0
 #define REGION_1 1
 
