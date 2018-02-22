@@ -1,4 +1,5 @@
-
+#include <stdlib.h>
+#include <stdio.h>
 
 #include <comp421/loadinfo.h>
 #include <comp421/yalnix.h>
@@ -22,7 +23,7 @@ void TrapMemory(ExceptionInfo *info);
 void TrapMath(ExceptionInfo *info);
 void TrapTTYReceive(ExceptionInfo *info);
 void TrapTTYTransmit(ExceptionInfo *info);
- 
+
 #define REGION_0 0
 #define REGION_1 1
 
@@ -30,6 +31,8 @@ void TrapTTYTransmit(ExceptionInfo *info);
 #define PCB_RUNNING 0
 #define PCB_READY 1
 #define PCB_WAITBLOC 2
+
+
 
 typedef struct pcb {
     SavedContext *ctx;
@@ -42,10 +45,56 @@ typedef struct pcb {
     struct pcb *sibling;
 } pcb;
 
+typedef struct line {
+    void *buf;
+    int cur;
+    int len;
+    struct line *next;
+} line;
+
+pcb **tty_head, **tty_tail; // first NUM_TERMINALS are for receiving; second NUM_TERMINALS are for transmiting
+pcb **tty_transmiting;  // pcbs that are transmitting to terminal (haven't received interrupt)
+pcb *idle_pcb = NULL;
+
+line **line_head, **line_tail;  // input buffers for each terminal
+
 /* Switch Function*/
 SavedContext *MySwitchFunc(SavedContext *ctxp, void *p1, void *p2);
 
-void KernelStart(ExceptionInfo *info,
-                 unsigned int pmem_size, void *orig_brk, char **cmd_args){}
+void KernelStart(ExceptionInfo *info, unsigned int pmem_size, void *orig_brk, char **cmd_args){
+
+    init_terminals();
+
+
+}
+
+
+void init_terminals() {
+    tty_head = (pcb **)calloc(2 * NUM_TERMINALS, sizeof(pcb *));
+    if (tty_head == NULL) {
+        fprintf(stderr, "KERNEL_START_ERROR\n");
+        return;
+    }
+    tty_tail = (pcb **)calloc(2 * NUM_TERMINALS, sizeof(pcb *));
+    if (tty_tail == NULL) {
+        fprintf(stderr, "KERNEL_START_ERROR\n");
+        return;
+    }
+    tty_transmiting = (pcb **)calloc(NUM_TERMINALS, sizeof(pcb *));
+    if (tty_transmiting == NULL) {
+        fprintf(stderr, "KERNEL_START_ERROR\n");
+        return;
+    }
+    line_head = (line **)calloc(NUM_TERMINALS, sizeof(line *));
+    if (line_head == NULL) {
+        fprintf(stderr, "KERNEL_START_ERROR\n");
+        return;
+    }
+    line_tail = (line **)calloc(NUM_TERMINALS, sizeof(line *));
+    if (line_tail == NULL) {
+        fprintf(stderr, "KERNEL_START_ERROR\n");
+        return;
+    }
+}
 
 extern int SetKernelBrk(void *addr){}
