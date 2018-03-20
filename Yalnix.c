@@ -12,6 +12,13 @@ void TrapMemory(ExceptionInfo *info);
 void TrapMath(ExceptionInfo *info);
 void TrapTTYReceive(ExceptionInfo *info);
 void TrapTTYTransmit(ExceptionInfo *info);
+void Idle(void){
+    while(1){
+        Pause();
+        TracePrintf(1,"Running in Idle");
+    }
+    
+}
 
 void (*IntVectorTable[TRAP_VECTOR_SIZE])(ExceptionInfo *);  /* Global Interrupt Vetor Table*/
 struct pte PageTable0[PAGE_TABLE_LEN];  /* Page Table for Region 0*/
@@ -39,7 +46,6 @@ void KernelStart(ExceptionInfo *info, unsigned int pmem_size, void *orig_brk, ch
     HeapEnd = (UP_TO_PAGE(orig_brk)>> PAGESHIFT) - PAGE_TABLE_LEN; /* Mark the end of the data segment*/
     TracePrintf(1,"TextEnd = %u",TextEnd);
     TracePrintf(1,"HeapEnd = %u",HeapEnd);
-    printf("fuck!!!!!!!!!!!");
 
     /*Init Text seg*/
     for(i = 0; i < TextEnd; i++){
@@ -56,6 +62,8 @@ void KernelStart(ExceptionInfo *info, unsigned int pmem_size, void *orig_brk, ch
         PageTable1[i].kprot = PROT_READ|PROT_WRITE;
         PageTable1[i].valid = 1;
     }
+    for(;i < (VMEM_LIMIT >> PAGESHIFT);i++)
+        PageTable1[i].valid = 0;
 
     StackStart = KERNEL_STACK_LIMIT >> PAGESHIFT; /* Mark the highest addr of the stack*/
     StackEnd = KERNEL_STACK_BASE >> PAGESHIFT;  /* Mark the lowest addr of the stack*/
@@ -71,7 +79,9 @@ void KernelStart(ExceptionInfo *info, unsigned int pmem_size, void *orig_brk, ch
     }
     
     WriteRegister(REG_VM_ENABLE, 1);
-    
+    info->pc = Idle;
+    //info->sp = (void *)KERNEL_STACK_LIMIT;
+    info->sp = orig_brk;
     return;
 }
 
