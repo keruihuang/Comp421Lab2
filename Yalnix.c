@@ -5,17 +5,6 @@
 #include <comp421/yalnix.h>
 #include <comp421/hardware.h>
 
-/* Kernel Calls */
-extern int Fork(void);
-extern int Exec(char *, char **);
-extern void Exit(int) __attribute__ ((noreturn));
-extern int Wait(int *);
-extern int GetPid(void);
-extern int Brk(void *);
-extern int Delay(int clock_ticks);
-extern int TtyRead(int, void *, int);
-extern int TtyWrite(int, void *, int);
-
 void TrapKernel(ExceptionInfo *info);
 void TrapClock(ExceptionInfo *info);
 void TrapIllegal(ExceptionInfo *info);
@@ -24,77 +13,98 @@ void TrapMath(ExceptionInfo *info);
 void TrapTTYReceive(ExceptionInfo *info);
 void TrapTTYTransmit(ExceptionInfo *info);
 
-#define REGION_0 0
-#define REGION_1 1
+void (*IntVectorTable[TRAP_VECTOR_SIZE])(ExceptionInfo *);  /* Global Interrupt Vetor Table*/
+struct pte PageTable0[PAGE_TABLE_LEN];  /* Page Table for Region 0*/
+struct pte PageTable1[PAGE_TABLE_LEN];  /* Page Table for Region 1*/
 
-#define PCB_TERMINATED  -1
-#define PCB_RUNNING 0
-#define PCB_READY 1
-#define PCB_WAITBLOC 2
-
-
-
-typedef struct pcb {
-    SavedContext *ctx;
-    int pid;
-    int state; //TERMINATED is -1, RUNNING is 0, READY is 1, WAITBLOCK is 2
-    int nchild;
-    struct pcb *next;
-    struct pcb *parent;
-    struct pcb *child;
-    struct pcb *sibling;
-} pcb;
-
-typedef struct line {
-    void *buf;
-    int cur;
-    int len;
-    struct line *next;
-} line;
-
-pcb **tty_head, **tty_tail; // first NUM_TERMINALS are for receiving; second NUM_TERMINALS are for transmiting
-pcb **tty_transmiting;  // pcbs that are transmitting to terminal (haven't received interrupt)
-pcb *idle_pcb = NULL;
-
-line **line_head, **line_tail;  // input buffers for each terminal
-
-/* Switch Function*/
-SavedContext *MySwitchFunc(SavedContext *ctxp, void *p1, void *p2);
 
 void KernelStart(ExceptionInfo *info, unsigned int pmem_size, void *orig_brk, char **cmd_args){
+    int i;
+    unsigned int HeapEnd, StackStart, StackEnd, TextEnd;
+    /*Init Vector Table and point the reg to it*/
+    IntVectorTable[TRAP_KERNEL] = TrapKernel;
+    IntVectorTable[TRAP_CLOCK] = TrapClock;
+    IntVectorTable[TRAP_ILLEGAL] = TrapIllegal;
+    IntVectorTable[TRAP_MEMORY] = TrapMemory;
+    IntVectorTable[TRAP_MATH] = TrapMath;
+    IntVectorTable[TRAP_TTY_RECEIVE] = TrapTTYReceive;
+    IntVectorTable[TRAP_TTY_TRANSMIT] = TrapTTYTransmit;
+    WriteRegister(REG_VECTOR_BASE, (RCS421RegVal)IntVectorTable);
+    
+    /*Build the initial page tables and enavle virtual memory*/
+    WriteRegister(REG_PTR0, (RCS421RegVal)PageTable0);
+    WriteRegister(REG_PTR1, (RCS421RegVal)PageTable1);
 
-    init_terminals();
+    TextEnd = (UP_TO_PAGE(&_etext) >> PAGESHIFT) - PAGE_TABLE_LEN; /* Mark the end of the Text segment*/
+    HeapEnd = (UP_TO_PAGE(orig_brk)>> PAGESHIFT) - PAGE_TABLE_LEN; /* Mark the end of the data segment*/
+    TracePrintf(1,"TextEnd = %u",TextEnd);
+    TracePrintf(1,"HeapEnd = %u",HeapEnd);
+    printf("fuck!!!!!!!!!!!");
 
+    /*Init Text seg*/
+    for(i = 0; i < TextEnd; i++){
+        PageTable1[i].pfn = i + PAGE_TABLE_LEN;
+        PageTable1[i].uprot = PROT_NONE;
+        PageTable1[i].kprot = PROT_READ|PROT_EXEC;
+        PageTable1[i].valid = 1;
+    }
 
+    /*Init Data seg*/
+    for(i = TextEnd; i < HeapEnd; i++){
+        PageTable1[i].pfn = i + PAGE_TABLE_LEN;
+        PageTable1[i].uprot = PROT_NONE;
+        PageTable1[i].kprot = PROT_READ|PROT_WRITE;
+        PageTable1[i].valid = 1;
+    }
+
+    StackStart = KERNEL_STACK_LIMIT >> PAGESHIFT; /* Mark the highest addr of the stack*/
+    StackEnd = KERNEL_STACK_BASE >> PAGESHIFT;  /* Mark the lowest addr of the stack*/
+    TracePrintf(1,"StackStart = %u",StackStart);
+    TracePrintf(1,"StackEnd = %u",StackEnd);
+    
+    /*Init Kernel Stack*/ 
+   for(i = StackEnd; i < StackStart; i++){
+        PageTable0[i].pfn = i;
+        PageTable0[i].uprot = PROT_NONE;
+        PageTable0[i].kprot = PROT_READ|PROT_WRITE;
+        PageTable0[i].valid = 1;
+    }
+    
+    WriteRegister(REG_VM_ENABLE, 1);
+    
+    return;
+}
+
+int SetKernelBrk(void *addr){
+    Halt();
 }
 
 
-void init_terminals() {
-    tty_head = (pcb **)calloc(2 * NUM_TERMINALS, sizeof(pcb *));
-    if (tty_head == NULL) {
-        fprintf(stderr, "KERNEL_START_ERROR\n");
-        return;
-    }
-    tty_tail = (pcb **)calloc(2 * NUM_TERMINALS, sizeof(pcb *));
-    if (tty_tail == NULL) {
-        fprintf(stderr, "KERNEL_START_ERROR\n");
-        return;
-    }
-    tty_transmiting = (pcb **)calloc(NUM_TERMINALS, sizeof(pcb *));
-    if (tty_transmiting == NULL) {
-        fprintf(stderr, "KERNEL_START_ERROR\n");
-        return;
-    }
-    line_head = (line **)calloc(NUM_TERMINALS, sizeof(line *));
-    if (line_head == NULL) {
-        fprintf(stderr, "KERNEL_START_ERROR\n");
-        return;
-    }
-    line_tail = (line **)calloc(NUM_TERMINALS, sizeof(line *));
-    if (line_tail == NULL) {
-        fprintf(stderr, "KERNEL_START_ERROR\n");
-        return;
-    }
+void TrapKernel(ExceptionInfo *info){
+    TracePrintf(1,"TrapKernel");
+    Halt();
 }
-
-extern int SetKernelBrk(void *addr){}
+void TrapClock(ExceptionInfo *info){
+    TracePrintf(1,"TrapClock");
+    Halt();
+}
+void TrapIllegal(ExceptionInfo *info){
+    TracePrintf(1,"TrapIllegal");
+    Halt();
+}
+void TrapMemory(ExceptionInfo *info){
+    TracePrintf(1,"TrapMemory");
+    Halt();
+}
+void TrapMath(ExceptionInfo *info){
+    TracePrintf(1,"TrapMath");
+    Halt();
+}
+void TrapTTYReceive(ExceptionInfo *info){
+    TracePrintf(1,"TrapTTYReceive");
+    Halt();
+}
+void TrapTTYTransmit(ExceptionInfo *info){
+    TracePrintf(1,"TrapTTYTransimit");
+    Halt();
+}
