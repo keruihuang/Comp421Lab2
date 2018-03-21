@@ -141,7 +141,7 @@ void TrapTTYTransmit(ExceptionInfo *info){
  *  in this case.
  */
 int
-LoadProgram(char *name, char **args, ExceptionInfo *info, struct pte *process_page_table)
+LoadProgram(char *name, char **args, ExceptionInfo *frame, struct pte *process_page_table)
 {
     int fd;
     int status;
@@ -260,7 +260,7 @@ LoadProgram(char *name, char **args, ExceptionInfo *info, struct pte *process_pa
 
     // >>>> Initialize sp for the current process to (char *)cpp.
     // >>>> The value of cpp was initialized above.
-    info->sp = (char *)cpp;
+    frame->sp = (char *)cpp;
 
     /*
      *  Free all the old physical memory belonging to this process,
@@ -387,7 +387,7 @@ LoadProgram(char *name, char **args, ExceptionInfo *info, struct pte *process_pa
      *  Set the entry point in the exception frame.
      */
     // >>>> Initialize pc for the current process to (void *)li.entry
-    info->pc = (void *)li.entry;
+    frame->pc = (void *)li.entry;
     /*
      *  Now, finally, build the argument list on the new stack.
      */
@@ -414,9 +414,9 @@ LoadProgram(char *name, char **args, ExceptionInfo *info, struct pte *process_pa
     // >>>> current process to 0.
     // >>>> Initialize psr for the current process to 0.
     for (i=0; i < NUM_REGS; i++) {
-        info->regs[i] = 0;
+        frame->regs[i] = 0;
     }
-    info->psr = 0;
+    frame->psr = 0;
 
     return (0);
 }
