@@ -10,14 +10,12 @@
 
 typedef struct pte pte;
 extern int free_page_num;
-/*
- * Linked list used to store the free physical address
- */
-typedef struct pf {
-    unsigned int phys_page_num;
-    struct pf *next;
-} free_page;
-extern free_page *phys_free_page;
 
-unsigned long find_free_page(void);
-extern int cur_brk;
+typedef struct physical_address_linked_list {
+    unsigned int physical_page_num;
+    struct physical_address_linked_list *next;
+} free_page;
+extern free_page *physical_free_page;
+
+unsigned long get_free_page(void);
+extern int current_brk;

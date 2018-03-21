@@ -311,14 +311,14 @@ LoadProgram(char *name, char **args, ExceptionInfo *frame, struct pte *process_p
     // >>>>     pfn   = a new page of physical memory
 
     for (; i < text_npg + MEM_INVALID_PAGES; i ++) {
-        process_page_table[i].pfn = find_free_page();
+        process_page_table[i].pfn = get_free_page();
         process_page_table[i].valid = 1;
         process_page_table[i].kprot = PROT_READ|PROT_WRITE;
         process_page_table[i].uprot = PROT_READ|PROT_EXEC;
     }
 
     for (; i < text_npg + data_bss_npg + MEM_INVALID_PAGES; i ++) {
-        process_page_table[i].pfn = find_free_page();
+        process_page_table[i].pfn = get_free_page();
         process_page_table[i].valid = 1;
         process_page_table[i].kprot = PROT_READ|PROT_WRITE;
         process_page_table[i].uprot = PROT_READ|PROT_WRITE;
@@ -326,7 +326,7 @@ LoadProgram(char *name, char **args, ExceptionInfo *frame, struct pte *process_p
 
 
     //Set the brk for the current process
-    cur_brk = (void *)UP_TO_PAGE((MEM_INVALID_PAGES + text_npg + data_bss_npg) * PAGESIZE);
+    current_brk = (void *)UP_TO_PAGE((MEM_INVALID_PAGES + text_npg + data_bss_npg) * PAGESIZE);
 
     /* And finally the user stack pages */
     // >>>> For stack_npg number of PTEs in the Region 0 page table
@@ -339,7 +339,7 @@ LoadProgram(char *name, char **args, ExceptionInfo *frame, struct pte *process_p
     // >>>>     pfn   = a new page of physical memory
     int last_user_page = USER_STACK_LIMIT/PAGESIZE - 1;
     for (i = last_user_page; i > last_user_page - stack_npg; i--) {
-        process_page_table[i].pfn = find_free_page();
+        process_page_table[i].pfn = get_free_page();
         process_page_table[i].valid = 1;
         process_page_table[i].kprot = PROT_READ | PROT_WRITE;
         process_page_table[i].uprot = PROT_READ | PROT_WRITE;
