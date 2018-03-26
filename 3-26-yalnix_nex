@@ -1,0 +1,188 @@
+#include <stdlib.h>
+#include <stdio.h>
+
+#include <comp421/loadinfo.h>
+#include <comp421/yalnix.h>
+#include <comp421/hardware.h>
+#include "help.h"
+
+void TrapKernel(ExceptionInfo *info);
+void TrapClock(ExceptionInfo *info);
+void TrapIllegal(ExceptionInfo *info);
+void TrapMemory(ExceptionInfo *info);
+void TrapMath(ExceptionInfo *info);
+void TrapTTYReceive(ExceptionInfo *info);
+void TrapTTYTransmit(ExceptionInfo *info);
+void Idle(void);
+
+void *kernel_brk;
+void (*IntVectorTable[TRAP_VECTOR_SIZE])(ExceptionInfo *);  /* Global Interrupt Vetor Table*/
+struct pte PageTable0[PAGE_TABLE_LEN];  /* Page Table for Region 0*/
+struct pte PageTable1[PAGE_TABLE_LEN];  /* Page Table for Region 1*/
+free_page *physical_free_page;
+unsigned int free_page_num;
+
+void KernelStart(ExceptionInfo *info, unsigned int pmem_size, void *orig_brk, char **cmd_args){
+    int i;
+    unsigned int HeapEnd, StackStart, StackEnd, TextEnd;
+    kernel_brk = orig_brk;     /* in case malloc is used in KernelStart*/
+    free_page *ptr_next;
+
+
+
+    /*Init Vector Table and point the reg to it*/
+    IntVectorTable[TRAP_KERNEL] = TrapKernel;
+    IntVectorTable[TRAP_CLOCK] = TrapClock;
+    IntVectorTable[TRAP_ILLEGAL] = TrapIllegal;
+    IntVectorTable[TRAP_MEMORY] = TrapMemory;
+    IntVectorTable[TRAP_MATH] = TrapMath;
+    IntVectorTable[TRAP_TTY_RECEIVE] = TrapTTYReceive;
+    IntVectorTable[TRAP_TTY_TRANSMIT] = TrapTTYTransmit;
+    for(i = TRAP_TTY_TRANSMIT+1; i < TRAP_VECTOR_SIZE; i++){
+        IntVectorTable[i] = NULL;
+    }
+    WriteRegister(REG_VECTOR_BASE, (RCS421RegVal)IntVectorTable);
+    
+    /*Build the initial page tables and enavle virtual memory*/
+    WriteRegister(REG_PTR0, (RCS421RegVal)PageTable0);
+    WriteRegister(REG_PTR1, (RCS421RegVal)PageTable1);
+
+    
+    
+    StackStart = KERNEL_STACK_LIMIT >> PAGESHIFT; /* Mark the highest addr of the stack*/
+    StackEnd = KERNEL_STACK_BASE >> PAGESHIFT;  /* Mark the lowest addr of the stack*/
+    /*For debugging*/
+    TracePrintf(1,"StackStart = %u\n",StackStart);
+    TracePrintf(1,"StackEnd = %u\n",StackEnd);
+
+    /********** Create linked list for free physical pages*************/
+    physical_free_page = (free_page *)malloc(sizeof(free_page));
+    physical_free_page->physical_page_num = 0;
+    physical_free_page->next = NULL;
+    ptr_next = physical_free_page;
+
+    for (i = 1; i < StackEnd; i++){                       /*free pfn: 0 ~ 507*/
+        ptr_next->next = (free_page *)malloc(sizeof(free_page));
+        ptr_next = ptr_next->next;
+        ptr_next->physical_page_num = i; 
+        ptr_next->physical_page_num = i; 
+    }
+    for(i = pmem_size/PAGESIZE - 1; i > (UP_TO_PAGE(kernel_brk)>> PAGESHIFT); i--){  /*free pfn: brk ~ limit*/
+        ptr_next->next = (free_page *)malloc(sizeof(free_page));
+        ptr_next = ptr_next->next;
+        ptr_next->physical_page_num = i; 
+    }
+    ptr_next->next = NULL;
+
+    TextEnd = (UP_TO_PAGE(&_etext) >> PAGESHIFT) - PAGE_TABLE_LEN; /* Mark the end of the Text segment*/
+    HeapEnd = (UP_TO_PAGE(kernel_brk)>> PAGESHIFT) - PAGE_TABLE_LEN; /* Mark the end of the data segment*/
+    free_page_num = pmem_size/PAGESIZE - KERNEL_STACK_PAGES - HeapEnd;  /* Store the number of free physical pages*/
+    /*For Debugging*/
+    TracePrintf(1,"TextEnd = %u\n",TextEnd);
+    TracePrintf(1,"HeapEnd = %u\n",HeapEnd);
+    TracePrintf(1,"Free page number: %u\n",free_page_num);
+    TracePrintf(1,"Malloc free_page_num * sizeof(free_page): %u * %lu = %lu space for linked list\n",free_page_num,sizeof(free_page),free_page_num * sizeof(free_page));
+    TracePrintf(1,"Total phyical pages: %u\n",pmem_size/PAGESIZE);
+    TracePrintf(1,"sizeof(unsigned int) = %lu\n",sizeof(unsigned int));
+
+
+    /***************************Initial Page Talbe**************************/
+    /*Init Text seg*/
+    for(i = 0; i < TextEnd; i++){
+        PageTable1[i].pfn = i + PAGE_TABLE_LEN;
+        PageTable1[i].uprot = PROT_NONE;
+        PageTable1[i].kprot = PROT_READ|PROT_EXEC;
+        PageTable1[i].valid = 1;
+    }
+
+    /*Init Data seg*/
+    for(i = TextEnd; i < HeapEnd; i++){
+        PageTable1[i].pfn = i + PAGE_TABLE_LEN;
+        PageTable1[i].uprot = PROT_NONE;
+        PageTable1[i].kprot = PROT_READ|PROT_WRITE;
+        PageTable1[i].valid = 1;
+    }
+
+    for(; i < PAGE_TABLE_LEN; i++){
+        PageTable1[i].valid = 0;
+    }
+
+    /*Init Kernel Stack*/ 
+   for(i = StackEnd; i < StackStart; i++){
+        PageTable0[i].pfn = i;
+        PageTable0[i].uprot = PROT_NONE;
+        PageTable0[i].kprot = PROT_READ|PROT_WRITE;
+        PageTable0[i].valid = 1;
+    }
+
+    
+    WriteRegister(REG_VM_ENABLE, 1);
+    info->pc = Idle;
+    info->sp = (void *)KERNEL_STACK_LIMIT;
+}
+
+int SetKernelBrk(void *addr){
+    /* Before VM enable*/
+    if (addr > (void *)VMEM_1_LIMIT)
+        return -1;
+    else{
+        kernel_brk = addr;
+        return 0;
+        }
+}
+
+void Idle(void){
+    while(1){
+      TracePrintf(1,"Running in Idle\n");
+        Pause();
+    }
+}
+
+void TrapKernel(ExceptionInfo *info){
+    TracePrintf(1,"TrapKernel\n");
+    Halt();
+}
+void TrapClock(ExceptionInfo *info){
+    TracePrintf(1,"TrapClock\n");
+    Halt();
+}
+void TrapIllegal(ExceptionInfo *info){
+    TracePrintf(1,"TrapIllegal\n");
+    Halt();
+}
+void TrapMemory(ExceptionInfo *info){
+    TracePrintf(1,"TrapMemory\n");
+    Halt();
+}
+void TrapMath(ExceptionInfo *info){
+    TracePrintf(1,"TrapMath\n");
+    Halt();
+}
+void TrapTTYReceive(ExceptionInfo *info){
+    TracePrintf(1,"TrapTTYReceive\n");
+    Halt();
+}
+void TrapTTYTransmit(ExceptionInfo *info){
+    TracePrintf(1,"TrapTTYTransimit\n");
+    Halt();
+}
+
+void return_free_page(unsigned int pfn){
+    free_page *temp;
+    temp = (free_page *)malloc(sizeof(free_page));
+    temp->physical_page_num = pfn;
+    temp->next = physical_free_page;
+    physical_free_page = temp;
+    free_page_num++;
+}
+
+unsigned int get_free_page(void){
+    free_page *temp;
+    unsigned int pfn;
+    temp = physical_free_page;
+    physical_free_page = physical_free_page->next;
+    pfn = temp->physical_page_num;
+    free(temp);
+    free_page_num--;
+    return pfn;
+}
