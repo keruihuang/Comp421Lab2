@@ -1,0 +1,34 @@
+SavedContext *MySwitchFunc(SavedContext *ctxp, void *p1, void *p2){
+    int i;
+    unsigned int temp;
+    unsigned long src;
+    if (p1 == p2)
+        p1 = IdleProcess;
+        
+    temp = ((pcb *)p1)->addr_pt0[(USER_STACK_LIMIT >> PAGESHIFT)-1].pfn;    
+    TracePrintf(1, "temp pfn = %u\n", temp);
+    TracePrintf(1, "temp valid = %u\n",((pcb *)p1)->addr_pt0[(USER_STACK_LIMIT >> PAGESHIFT)-1].valid);
+    
+    /*copy the current kernel stack to the kernel stack, fill in the SavedContext*/
+    /*Using the user stack top page as temporary mapping page for copy kernel stack*/
+    for(i = 0; i < KERNEL_STACK_PAGES; i++){
+        ((pcb *)p1)->addr_pt0[(USER_STACK_LIMIT >> PAGESHIFT)-1].pfn = ((pcb *)p2)->addr_pt0[(KERNEL_STACK_BASE >> PAGESHIFT)+i].pfn;
+        TracePrintf(1, "new pfn = %u\n",((pcb *)p2)->addr_pt0[(KERNEL_STACK_BASE >> PAGESHIFT)+i].pfn);
+        WriteRegister(REG_TLB_FLUSH, (RCS421RegVal)(USER_STACK_LIMIT - PAGESIZE));
+        
+        src = KERNEL_STACK_BASE + i*PAGESIZE;
+        TracePrintf(1, "soucre vm addr = %p\n", (void *)src);
+        memcpy((void *)(USER_STACK_LIMIT - PAGESIZE), (void *)src, PAGESIZE);
+    }
+    /*restore PTE's pfn*/
+    ((pcb *)p1)->addr_pt0[(USER_STACK_LIMIT >> PAGESHIFT)-1].pfn = temp;
+    
+    /*Change Region 0 Pagetable*/
+    TracePrintf(1,"change pagetablef physical addr from %p to %d\n",PageTable0 ,PageTable1[PAGE_TABLE_LEN - 1].pfn);
+    WriteRegister(REG_PTR0, (RCS421RegVal)(PageTable1[PAGE_TABLE_LEN - 1].pfn << PAGESHIFT));
+    WriteRegister(REG_TLB_FLUSH, TLB_FLUSH_0);
+    
+    TracePrintf(1,"myswitchfunc: ctxp = %s\n",ctxp->s);
+    ((pcb *)p1)->ctx = *ctxp;
+    return &((pcb *)p2)->ctx;
+}
