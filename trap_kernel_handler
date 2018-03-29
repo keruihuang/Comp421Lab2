@@ -1,0 +1,85 @@
+pcb *cur_process;
+
+struct pte *process_page_table;
+
+
+void trap_kernel_handler(ExceptionInfo *info) {
+    switch((*info).code)
+    {
+        case YALNIX_FORK:
+            (*info).regs[0] = Fork();
+            break;
+        case YALNIX_EXEC:
+            (*info).regs[0] = Exec(info, (char *)(info->regs[1]), (char **)(info->regs[2]));
+            break;
+        case YALNIX_EXIT:
+            MyExit((int)info->regs[1]);
+            break;
+        case YALNIX_WAIT:
+            (*info).regs[0] = Wait((int)info->regs[1]);
+            break;
+        case YALNIX_GETPID:
+            (*info).regs[0] = GetPid();
+            break;
+        case YALNIX_BRK:
+            (*info).regs[0] = Brk((void *)info->regs[1]);
+            break;
+        case YALNIX_DELAY:
+            (*info).regs[0] = Delay((int)info->regs[1]);
+            break;
+        case YALNIX_TTY_READ:
+            (*info).regs[0] = NULL;
+            break;
+        case YALNIX_TTY_WRITE:
+            (*info).regs[0] = NULL;
+            break;
+        default:
+            break;
+    }
+}
+
+int GetPid() {
+    if (cur_process != NULL) {
+        return cur_process->pid;
+    } else {
+        return -1;
+    }
+
+}
+\
+int Delay(int clock_ticks) {
+
+    return 0;
+}
+
+
+int Brk(void *addr) {
+    return 0;
+}
+
+int Fork(){
+
+    return 0;
+}
+
+int Exec(ExceptionInfo *info, char *filename, char **argvec) {
+    int status;
+    status = LoadProgram(filename, argvec, info, process_page_table);
+
+    if (status == -1)
+        return ERROR;
+
+    return 0;
+
+}
+
+void Exit(int status){
+
+    return 0;
+ }
+
+
+ int Wait(int *status_ptr) {
+
+    return 0;
+ }

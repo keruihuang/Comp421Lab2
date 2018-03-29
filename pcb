@@ -1,0 +1,7 @@
+typedef struct pcb {
+    SavedContext *ctx;
+    int pid;
+    int brk;
+    struct pcb *parent;
+    struct pcb *child;
+} pcb;
