@@ -1,0 +1,35 @@
+/*Global variables*/
+int VM_flag;                        /*VM enable flag*/
+void *kernel_brk;                   /*Keep track of current kernel brk for malloc*/
+void (*IntVectorTable[TRAP_VECTOR_SIZE])(ExceptionInfo *);  /* Global Interrupt Vetor Table*/
+struct pte PageTable0[PAGE_TABLE_LEN];  /* Region 0 Page Table for Idle Process*/
+struct pte PageTable1[PAGE_TABLE_LEN];  /* Region 1 Page Table for Kernel*/
+free_page *physical_free_page;          /* Keep track of a list of free PFN*/
+unsigned int free_page_num;             /* Keep track of the number of free pages*/
+pcb *CurrentProcess;                    /* Keep track of the current runnig process*/
+pcb *IdleProcess;                       /* pcb for Idle Process*/
+pcb *InitProcess;                       /* pcb for init Process*/
+
+
+
+/*Helper function*/
+unsigned int get_free_page(void);                /* fetch a free Physical page number*/
+void return_free_page(unsigned int);             /* return a free physical page number*/
+int Assign_PID(void);                            /* get an Pid for a new creating Process*/
+SavedContext *SwitchInit (SavedContext *ctxp, void *p1, void *p2);
+SavedContext *SwitchCommon (SavedContext *ctxp, void *p1, void *p2);
+SavedContext *SwitchFork (SavedContext *ctxp, void *p1, void *p2);
+extern int LoadProgram(char *name, char **args, ExceptionInfo *info, struct pte *process_page_table);
+
+
+typedef struct pcb {
+    int pid;  
+    pte *addr_pt0;
+    unsigned int alloc_page_num;
+    SavedContext ctx;               /* Attention this is not a pointer */
+    char *name;
+    struct pcb *next;
+    struct pcb *prev;
+    struct pcb *child;
+    struct pcb *parent; 
+} pcb;
